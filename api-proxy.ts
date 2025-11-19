@@ -27,6 +27,11 @@ const services = {
   // --- 🌐 聚合器 ---
   '/openrouter': { target: 'https://openrouter.ai/api', envKey: 'OPENROUTER_API_KEYS', rateLimit: 100 },
 
+  // --- 🇨🇳 硅基流动 (SiliconFlow) ---
+  '/siliconflow': {
+    target: 'https://api.siliconflow.cn', envKey: 'SILICONFLOW_API_KEYS', rateLimit: 500 // 普通并发，建议 500ms
+  },
+
   // --- 🤖 主流模型 ---
   '/openai': { target: 'https://api.openai.com', envKey: 'OPENAI_API_KEYS', rateLimit: 100 },
   '/claude': { target: 'https://api.anthropic.com', envKey: 'CLAUDE_API_KEYS', rateLimit: 500 },
