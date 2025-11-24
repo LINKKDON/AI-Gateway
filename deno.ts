@@ -1,7 +1,7 @@
 /**
- * Universal AI Gateway v5.7.1 (Deno Stealth Edition)
+ * Universal AI Gateway v5.7.2 (Deno Nginx Stealth Edition)
  * 平台：Deno Deploy / Docker / VPS
- * 更新：根路径隐身、沉浸式翻译并发优化、端口自适应
+ * 更新：根路径伪装成Nginx、沉浸式翻译并发优化、端口自适应
  */
 
 // 尝试导入标准库作为后备 (针对旧版 Deno)
@@ -186,9 +186,46 @@ async function handleRequest(req: Request): Promise<Response> {
 
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
 
-  // 2. 🕵️ 隐身模式：根路径返回 404
+  // =================================================
+  // 2. 🕵️ 顶级隐身：伪装成 Nginx 默认服务器 (Status 200)
+  // =================================================
   if (url.pathname === "/") {
-    return new Response("404 Not Found", { status: 404 });
+    const nginxHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+<style>
+    body {
+        width: 35em;
+        margin: 0 auto;
+        font-family: Tahoma, Verdana, Arial, sans-serif;
+    }
+</style>
+</head>
+<body>
+<h1>Welcome to nginx!</h1>
+<p>If you see this page, the nginx web server is successfully installed and
+working. Further configuration is required.</p>
+
+<p>For online documentation and support please refer to
+<a href="http://nginx.org/">nginx.org</a>.<br/>
+Commercial support is available at
+<a href="http://nginx.com/">nginx.com</a>.</p>
+
+<p><em>Thank you for using nginx.</em></p>
+</body>
+</html>`;
+
+    return new Response(nginxHtml, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/html; charset=UTF-8",
+        // 尝试伪造 Server 头，虽然部分 Deno 环境可能会强制覆盖
+        "Server": "nginx/1.18.0 (Ubuntu)",
+        "Connection": "keep-alive"
+      }
+    });
   }
 
   // 健康检查 (低调版)
@@ -209,7 +246,7 @@ async function handleRequest(req: Request): Promise<Response> {
 
   const manager = managers[prefix];
 
-  // --- 路径处理 (Sync with v5.6) ---
+  // --- 路径处理 ---
   let upstreamPath = url.pathname.substring(prefix.length);
 
   // 1. 默认路径补全
@@ -245,12 +282,11 @@ async function handleRequest(req: Request): Promise<Response> {
   const deniedHeaders = ["host", "origin", "referer", "cf-", "x-forwarded-proto", "forwarded", "via", "authorization", "content-length"];
 
   for (const [k, v] of req.headers.entries()) {
-    // includes 比 startsWith 更彻底
     if (!deniedHeaders.some(d => k.toLowerCase().includes(d))) {
       clientHeaders.set(k, v);
     }
     if (k.toLowerCase() === "authorization") clientToken = v.replace("Bearer ", "").trim();
-    if (k.toLowerCase() === "x-api-key" && !clientToken) clientToken = v.trim(); // 兼容 Claude 客户端传参
+    if (k.toLowerCase() === "x-api-key" && !clientToken) clientToken = v.trim(); // 兼容 Claude
   }
 
   const hasKeys = manager.keys.length > 0;
@@ -263,7 +299,6 @@ async function handleRequest(req: Request): Promise<Response> {
         return new Response(JSON.stringify({ error: "Gateway Overloaded" }), { status: 429, headers: CORS_HEADERS });
       }
       try {
-        // Deno 中大 Body 需注意，但 Chat 请求通常不大
         const bodyText = await req.text();
         return new Promise((resolve) => {
           manager.queue.push({
@@ -289,7 +324,6 @@ async function handleRequest(req: Request): Promise<Response> {
   }
   // === 分支 B: 透明直连 / 鉴权失败 fallback ===
   else {
-    // 如果是直连，恢复用户的 Key
     if (clientToken) {
       if (prefix === '/claude') clientHeaders.set("x-api-key", clientToken);
       else clientHeaders.set("Authorization", `Bearer ${clientToken}`);
@@ -298,12 +332,10 @@ async function handleRequest(req: Request): Promise<Response> {
 
   // --- 执行直连 (Shared Logic) ---
   try {
-    // 即使是直连也微小抖动
     const jitter = Math.floor(Math.random() * 100) + 20;
     await new Promise(r => setTimeout(r, jitter));
 
     clientHeaders.set("User-Agent", BROWSER_UA);
-    // 补全 OpenRouter
     if (prefix === '/openrouter') {
       if (!clientHeaders.has("HTTP-Referer")) clientHeaders.set("HTTP-Referer", "https://github.com");
       if (!clientHeaders.has("X-Title")) clientHeaders.set("X-Title", "Universal Gateway");
@@ -312,7 +344,7 @@ async function handleRequest(req: Request): Promise<Response> {
     const res = await fetch(targetUrl, {
       method: req.method,
       headers: clientHeaders,
-      body: req.body // Deno 支持直接透传 ReadableStream，无需 await text()
+      body: req.body
     });
 
     const newHeaders = new Headers(res.headers);
