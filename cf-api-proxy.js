@@ -1,16 +1,16 @@
 /**
- * Universal AI Gateway v5.9.5 (CF Workers Strict Fixed Edition)
+ * Universal AI Gateway v5.9.8 (Stable Failover Edition)
  * 平台：Cloudflare Workers
- * 修复：解决 "ReadableStream is disturbed" 错误
- * 原理：将 Body 转存为 ArrayBuffer 以支持失败重试
+ * 修复：
+ * 1. getKey 严格轮转 (基于 Body 锁定序列，重试必换 Key)
+ * 2. 429 重试增加微量 Jitter (100-300ms) 防爆冲
  */
 
 // ================= 1. 全局配置 =================
 
-const MAX_RETRIES = 2;       
+const MAX_RETRIES = 3; 
 const BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
 
-// Nginx 伪装页面
 const NGINX_HTML = `<!DOCTYPE html>
 <html>
 <head>
@@ -31,7 +31,6 @@ Commercial support is available at
 </body>
 </html>`;
 
-// 服务配置表
 const servicesConfig = {
   '/cerebras':   { target: 'https://api.cerebras.ai', envKey: 'CEREBRAS_API_KEYS' },
   '/groq':       { target: 'https://api.groq.com/openai', envKey: 'GROQ_API_KEYS' },
@@ -72,20 +71,43 @@ class ServiceManager {
     this.initialized = true;
   }
 
-  getKey() {
+  /**
+   * 🔑 修复后的 getKey 逻辑：严格轮转
+   * 使用 bodyBuffer 生成一个固定的种子 (Seed)。
+   * 公式：(Seed + retryCount) % Key总数
+   * * 效果：
+   * 假设 Seed=0, Keys=4。
+   * Retry 0 -> Key[0]
+   * Retry 1 -> Key[1] (绝对是下一个)
+   * Retry 2 -> Key[2]
+   */
+  getKey(bodyBuffer, retryCount = 0) {
     if (this.keys.length === 0) return null;
-    return this.keys[Math.floor(Math.random() * this.keys.length)];
+    
+    let baseIndex = 0;
+    
+    // 如果有 Body，用 Body 长度作为固定的随机种子
+    // 这样对于同一个请求，baseIndex 永远不变
+    if (bodyBuffer && bodyBuffer.byteLength > 0) {
+        // 为了防止长度完全一样导致 Hash 碰撞过多，加上第一位字节的值
+        const firstByte = new Uint8Array(bodyBuffer)[0] || 0;
+        baseIndex = bodyBuffer.byteLength + firstByte;
+    } else {
+        // 没有 Body (GET请求)，用时间戳
+        baseIndex = Date.now();
+    }
+
+    // 关键：retryCount 驱动指针移动
+    const finalIndex = (baseIndex + retryCount) % this.keys.length;
+    return this.keys[finalIndex];
   }
 
   async fetchWithRetry(url, method, headers, body, retryCount = 0) {
-    const apiKey = this.getKey();
+    // 传入 retryCount，保证拿到的是序列中的下一个 Key
+    const apiKey = this.getKey(body, retryCount);
+    
     const reqHeaders = new Headers(headers);
-    
-    // 保护 Multipart Boundary
-    if (!reqHeaders.has("Content-Type")) {
-        reqHeaders.set("Content-Type", "application/json");
-    }
-    
+    if (!reqHeaders.has("Content-Type")) reqHeaders.set("Content-Type", "application/json");
     reqHeaders.set("User-Agent", BROWSER_UA);
 
     if (apiKey) {
@@ -103,20 +125,27 @@ class ServiceManager {
     }
 
     try {
-      const jitter = Math.floor(Math.random() * 50) + 10;
-      if (retryCount > 0) await new Promise(r => setTimeout(r, jitter));
-
+      // 🚀 起步：0延迟，直接冲，追求首字速度
+      // 仅在极个别情况（如网络层报错重试）可以给一点点缓冲，但正常情况直接发
+      
       const res = await fetch(url, {
         method: method,
         headers: reqHeaders,
-        body: body, // 这里现在传入的是 ArrayBuffer，可以重复使用
+        body: body,
       });
 
+      // 遇到 429 限流 或 5xx 服务器错误
       if ((res.status === 429 || res.status >= 500) && retryCount < MAX_RETRIES) {
-        const nextRetry = retryCount + 1;
-        const waitTime = 1000 * Math.pow(2, nextRetry - 1);
-        await new Promise(r => setTimeout(r, waitTime));
-        return this.fetchWithRetry(url, method, headers, body, nextRetry);
+        
+        // 🛑 优化：安全缓冲 (Safety Buffer)
+        // 既然这个 Key 炸了，我们要换下一个 Key。
+        // 但为了防止 4 个 Key 在 10ms 内瞬间全部打死，我们强制睡 100ms ~ 300ms。
+        // 这个时间对用户体感影响很小，但对 API 来说是很好的“限流”信号。
+        const safeDelay = 100 + Math.floor(Math.random() * 200); 
+        await new Promise(r => setTimeout(r, safeDelay));
+
+        // 递归重试：retryCount + 1 会自动触发 getKey 里的切号逻辑
+        return this.fetchWithRetry(url, method, headers, body, retryCount + 1);
       }
 
       const newHeaders = new Headers(res.headers);
@@ -127,8 +156,9 @@ class ServiceManager {
       return new Response(res.body, { status: res.status, headers: newHeaders });
 
     } catch (e) {
+      // 网络层面的错误（DNS, 连接中断），稍微多等一下 (300ms)
       if (retryCount < MAX_RETRIES) {
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 300));
         return this.fetchWithRetry(url, method, headers, body, retryCount + 1);
       }
       return new Response(JSON.stringify({ 
@@ -153,22 +183,15 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // 1. 预检
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
 
-    // 2. 伪装
     if (url.pathname === "/" || request.method === "GET") {
       return new Response(NGINX_HTML, { 
         status: 200, 
-        headers: { 
-            "Content-Type": "text/html; charset=UTF-8",
-            "Server": "nginx/1.18.0",
-            "Connection": "keep-alive"
-        } 
+        headers: { "Content-Type": "text/html; charset=UTF-8", "Server": "nginx/1.18.0", "Connection": "keep-alive" } 
       });
     }
 
-    // 3. 路由匹配
     const sortedPrefixes = Object.keys(servicesConfig).sort((a, b) => b.length - a.length);
     const prefix = sortedPrefixes.find(p => url.pathname.startsWith(p));
     if (!prefix) return new Response(JSON.stringify({ error: "Not Found" }), { status: 404, headers: CORS_HEADERS });
@@ -176,7 +199,6 @@ export default {
     const manager = getManager(prefix);
     manager.initKeys(env); 
 
-    // 4. 路径处理
     let upstreamPath = url.pathname.substring(prefix.length);
     if (upstreamPath === "" || upstreamPath === "/") {
       if (prefix === '/claude') upstreamPath = "/v1/messages";
@@ -192,7 +214,6 @@ export default {
     const safeTarget = manager.config.target.replace(/\/+$/, "");
     const targetUrl = safeTarget + upstreamPath + url.search;
 
-    // 5. Header 清洗
     const clientHeaders = new Headers();
     const deniedHeaders = ["host", "origin", "referer", "cf-", "x-forwarded-proto", "forwarded", "via"];
     let clientToken = "";
@@ -203,31 +224,24 @@ export default {
       if (k.toLowerCase() === "x-api-key" && !clientToken) clientToken = v.trim(); 
     }
 
-    // 6. 鉴权
     const ACCESS_PASSWORD = env.ACCESS_PASSWORD || "linus"; 
     const isAuth = clientToken === ACCESS_PASSWORD;
     if (!isAuth) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: CORS_HEADERS });
 
-    // 7. 配置检查
     if (manager.keys.length === 0) {
-        return new Response(JSON.stringify({ error: `Service Not Configured: No keys found for ${prefix}` }), { 
-          status: 501, 
-          headers: CORS_HEADERS 
-        });
+        return new Response(JSON.stringify({ error: `Service Not Configured: No keys found for ${prefix}` }), { status: 501, headers: CORS_HEADERS });
     }
 
-    // 8. ✅ 关键修改：读取为 ArrayBuffer，解决流不可复用问题
+    // 必须读取 Body 为 Buffer 才能支持重试和 Hash 计算
     let body = null;
     if (request.method === "POST" || request.method === "PUT") {
         try {
-            // 将流转换为内存中的 Buffer，这样 fetchWithRetry 可以多次使用它
             body = await request.arrayBuffer();
         } catch (e) {
             return new Response("Error reading request body", { status: 400 });
         }
     }
 
-    // 9. 转发请求
     return manager.fetchWithRetry(targetUrl, request.method, clientHeaders, body);
   }
 };
