@@ -1,119 +1,101 @@
-# 🌐 Universal AI Gateway (通用 AI 网关)
+# 🌐 Universal AI Gateway (Dual Engine)
 
-一个高性能、隐身、抗高并发的 AI 聚合网关。支持多厂商负载均衡、密钥轮询、自动重试与防封保护。
+> **专为沉浸式翻译 (Immersive Translate) 与高并发场景优化的 Serverless AI 网关。**
 
-专为 **沉浸式翻译 (Immersive Translate)**、**LobeChat**、**ChatGPT-Next-Web** 等高并发场景优化。
-
-![Version](https://img.shields.io/badge/Version-v5.7-blue) ![Platform](https://img.shields.io/badge/Platform-Cloudflare%20%7C%20Deno%20%7C%20Docker-orange) ![License](https://img.shields.io/badge/License-MIT-green)
-
-## ✨ 核心特性
-
-*   **🕵️ 隐身模式 (Stealth Mode)**：根路径 `/` 返回 `404 Not Found`，彻底隐藏网关身份，防止扫描。
-*   **🛡️ 全链路去头 (No-Trace)**：严格过滤 `cf-ray`, `x-forwarded-for` 等特征头，上游无法探测你的真实 IP 或 Cloudflare 痕迹。
-*   **🚀 高并发队列 (Pipeline)**：内置非阻塞任务队列（深度 200+），完美承接沉浸式翻译瞬间爆发的几十个请求，防止 429 错误。
-*   **🎲 智能抖动 (Smart Jitter)**：在请求间加入 20ms~100ms 的微小随机延迟，模拟人类网络波动，规避“脚本特征”检测。
-*   **🔄 自动重试与轮询**：支持多 Key 轮询，遇到 429 或 5xx 错误自动指数退避重试。
-*   **🔗 路径修正**：完美修复 Gemini `/v1/` 路由问题，兼容 OpenRouter 伪装头，支持 DeepSeek。
+本项目提供两个针对不同平台特性深度优化的版本，旨在解决免费 API (如 Cerebras, Groq, DeepSeek) 的限流问题，同时提供隐私保护和 IP 伪装能力。
 
 ---
 
-## 🏗️ 部署指南
+## ⚖️ 版本选型指南 (Decision Guide)
 
-本项目提供两个版本，请根据你的需求选择。
+本项目包含两个核心分支，请根据你的具体资源和需求选择：
 
-### 🅰️ Cloudflare Workers 版 (推荐 🌟)
-> **适用场景**：个人使用、沉浸式翻译、追求极致速度、无服务器维护成本。
-
-1.  登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)。
-2.  创建一个新的 **Worker**。
-3.  复制 `v5.6.1 (Stealth Edition)` 的完整代码粘贴进去。
-4.  在 **Settings -> Variables** 中添加环境变量（见下表）。
-5.  点击 **Deploy**。
-
-### 🅱️ Deno / Docker 版
-> **适用场景**：企业内网、需要固定 IP、VPS 自建、Docker 容器化部署。
-
-**Deno Deploy 部署：**
-1.  创建一个新的 Deno 项目。
-2.  将 `v5.7.1 (Deno Stealth Edition)` 代码部署为 `main.ts`。
-3.  在后台配置环境变量。
-
-**Docker / VPS 部署：**
-```bash
-# 确保安装了 Deno
-deno run --allow-net --allow-env --watch main.ts
-# 或者使用 Dockerfile (自行构建环境)
-```
-
----
-
-## 🔑 环境变量配置 (Environment Variables)
-
-支持配置多个 Key，使用 **英文逗号** `,` 或 **换行符** 分隔。
-
-| 变量名 | 说明 | 示例 |
+| 特性 | **🚀 Cloudflare Workers 版 (v5.9.8)** | **🦕 Deno Deploy 版 (v5.9.9)** |
 | :--- | :--- | :--- |
-| `ACCESS_PASSWORD` | (可选) 网关访问密码，若设置则客户端需在 Key 处填写此密码 | `my_secret_pwd` |
-| `OPENAI_API_KEYS` | OpenAI 官方 Key | `sk-xx1,sk-xx2` |
-| `CLAUDE_API_KEYS` | Anthropic Claude Key | `sk-ant-xx1` |
-| `GEMINI_API_KEYS` | Google Gemini Key | `AIzaS...` |
-| `DEEPSEEK_API_KEYS` | DeepSeek 官方 Key | `sk-ds...` |
-| `GROQ_API_KEYS` | Groq 加速 Key | `gsk_...` |
-| `OPENROUTER_API_KEYS` | OpenRouter 聚合 Key | `sk-or...` |
-| `SILICONFLOW_API_KEYS`| 硅基流动 Key | `sk-sf...` |
+| **代号** | **Stable Failover (极速故障转移)** | **Stealth Queue (隐匿队列)** |
+| **核心机制** | **多 Key 轮转 + 暴力切号** | **全局真队列 + 严格限流** |
+| **并发策略** | 0ms 延迟直连，遇到 429 立即换 Key 重试 | 强制排队，按设定间隔 (如 250ms) 逐个放行 |
+| **IP 质量** | **极优** (Anycast 全球海量原生 IP) | 一般 (固定数据中心 IP) |
+| **适用人群** | **多 Key 玩家 (推荐)**<br>拥有 3+ 个免费 Key，追求极致翻译速度，无法忍受排队等待。 | **单 Key / 保号玩家**<br>Key 很少或很贵，必须严格控制 QPS，宁慢勿炸。 |
+| **最佳场景** | Cerebras (4 Key+), Groq, OpenAI, Claude | 付费 API, 严格 QPS 限制的公益 API |
 
 ---
 
-## 🛤️ 路由映射表
+## 🚀 1. Cloudflare Workers 版 (v5.9.8)
 
-网关通过 URL 前缀将请求分发给不同的上游服务。
+**原理：** 利用 Cloudflare 的高并发与优质 IP，配合 "Body-Hash" 锁定算法，确保请求在失败时能迅速切换到下一个不同的 Key，实现毫秒级容错。
 
-| 服务商 | 网关路径前缀 | 目标上游 API | 备注 |
-| :--- | :--- | :--- | :--- |
-| **OpenAI** | `/openai` | `api.openai.com` | 标准接口 |
-| **Claude** | `/claude` | `api.anthropic.com` | 自动注入 `x-api-key` |
-| **Gemini** | `/gemini` | `generativelanguage.googleapis.com` | 自动修正 `/v1` 为 `/v1beta` |
-| **DeepSeek** | `/deepseek`| `api.deepseek.com` | **新增** |
-| **Groq** | `/groq` | `api.groq.com/openai` | 兼容 OpenAI 格式 |
-| **OpenRouter**| `/openrouter`| `openrouter.ai/api` | 自动注入 Referer/Title |
+### 部署步骤
 
----
+1.  登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)，创建一个新的 Worker。
+2.  将 `worker.js` (v5.9.8) 的代码完整复制进去。
+3.  **配置环境变量 (Settings -> Variables)**：
+    * `ACCESS_PASSWORD`: (必填) 设置你的访问密码，防止被他人盗用。
+    * `CEREBRAS_API_KEYS`: (推荐) 填入你的 Key，用英文逗号 `,` 分隔。建议 4 个以上。
+    * *(可选支持)*: `GROQ_API_KEYS`, `DEEPSEEK_API_KEYS`, `OPENAI_API_KEYS` 等。
+4.  点击 **Deploy**。
 
-## 📖 客户端设置示例
-
-### 1. 沉浸式翻译 (Immersive Translate) - 最佳实践
-此网关针对沉浸式翻译的高并发做了特别优化。
-
-*   **服务商选择**：OpenAI (或你实际使用的模型厂商)
-*   **API Key**：
-    *   如果设置了 `ACCESS_PASSWORD`，填写该密码。
-    *   如果没设置密码，填写你在该厂商的真实 Key (网关会透传)。
-    *   *推荐：在 Worker 环境变量配置 Key，此处填写密码，安全且速度快。*
-*   **自定义接口地址 (Base URL)**：
-    *   OpenAI 模型：`https://你的域名.workers.dev/openai/v1/chat/completions`
-    *   DeepSeek 模型：`https://你的域名.workers.dev/deepseek/v1/chat/completions`
-    *   Claude 模型：`https://你的域名.workers.dev/claude/v1/messages`
-*   **模型 (Model)**：手动输入模型名称（如 `deepseek-chat`, `gpt-4o-mini`）。
-*   **并发数设置**：建议设置为 `10` ~ `20` (得益于网关的队列机制，可适当调高)。
-
-### 2. LobeChat / NextWeb
-*   **接口代理地址**：`https://你的域名.workers.dev/openai` (注意不带 `/v1`)
-*   **API Key**：同上。
+### ⚡️ 客户端建议设置
+* **沉浸式翻译 - 每秒最大请求数：** 建议设置为 `5` ~ `8`。
+* 此版本追求速度，通过快速重试掩盖错误。
 
 ---
 
-## ❓ 常见问题
+## 🦕 2. Deno Deploy 版 (v5.9.9)
 
-**Q: 访问首页显示 404 Not Found？**
-A: 正常的。这是**隐身模式**。为了防止被扫描器识别为 API 网关，根路径故意返回 404。请访问 `/health` 查看存活状态（返回 JSON）。
+**原理：** 利用 Deno 单实例内存共享特性，实现真实的全局队列 (Global Queue)。无论客户端并发多大，网关都会像红绿灯一样，匀速地将请求转发给上游。
 
-**Q: 为什么 Deno 版也有 Jitter (抖动)？**
-A: 即使 Deno 性能很强，为了防止固定 IP 在直连模式下瞬间发起大量请求被上游封禁，网关刻意加入了 20ms~100ms 的微小延迟。这能显著提高 IP 的存活率。
+### 部署步骤
 
-**Q: 托管模式 vs 直连模式？**
-*   **托管模式**：你在环境变量存 Key。客户端只需填密码。支持多 Key 轮询、队列保护、重试。**(推荐)**
-*   **直连模式**：你在客户端填真实 Key。网关仅作为隐身管道，透传流量。
+1.  登录 [Deno Deploy](https://dash.deno.com/)，新建一个 Playground 或连接 GitHub。
+2.  将 `main.ts` (v5.9.9) 的代码复制进去。
+3.  **代码微调**：
+    * 找到代码中的 `SERVICES_CONFIG`。
+    * 根据你的 Key 数量修改 `rateLimit`。公式：`1000 / Key数量 = rateLimit`。
+    * *例：你有 4 个 Key，设置 `rateLimit: 250` (即每 250ms 发一个请求)。*
+4.  **配置环境变量**：
+    * `ACCESS_PASSWORD`: (必填) 访问密码。
+    * `CEREBRAS_API_KEYS`: (必填) API Key 列表。
+5.  点击 **Save & Deploy**。
+
+### ⚡️ 客户端建议设置
+* **沉浸式翻译 - 每秒最大请求数：** 建议设置为 `3`。
+* 此版本追求稳定，让网关在云端帮你排队。
 
 ---
 
-**Disclaimer**: This project is for educational and research purposes only. Please comply with the terms of service of the upstream API providers.
+## 🔐 隐私与安全警示 (Privacy First)
+
+**⚠️ 严禁使用不可信的公共网关！**
+
+由于翻译请求通常包含大量敏感信息（隐私文档、公司合同、个人邮件等），且网关拥有者在技术上可以轻易截获明文内容。
+
+1.  **坚持自建：** 请务必部署在自己的 Cloudflare/Deno 账号下。
+2.  **密码保护：** 务必设置复杂的 `ACCESS_PASSWORD`。
+3.  **防盗用：** 代码已内置 Nginx 伪装页面，直接访问根路径不会暴露 API 信息，有效防止扫描。
+
+---
+
+## 🛠️ API 接入示例
+
+**基本 URL 格式：** `https://你的域名/服务商/v1/chat/completions`
+
+### 支持的服务商路由
+* `/cerebras` -> Cerebras
+* `/groq` -> Groq
+* `/deepseek` -> DeepSeek
+* `/openai` -> OpenAI
+* `/claude` -> Anthropic
+* `/gemini` -> Google Gemini
+
+### 沉浸式翻译配置示例
+* **API 服务：** OpenAI
+* **API Key：** `你的ACCESS_PASSWORD`
+* **模型：** `llama3.1-70b` (视服务商而定)
+* **自定义 API 地址：** `https://your-worker.workers.dev/cerebras/v1/chat/completions`
+
+---
+
+## 📄 License
+
+MIT License. 仅供学习交流与个人使用，请勿用于非法用途。
