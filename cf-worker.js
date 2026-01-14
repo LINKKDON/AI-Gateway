@@ -32,16 +32,18 @@ Commercial support is available at
 </html>`;
 
 const servicesConfig = {
-  '/cerebras':   { target: 'https://api.cerebras.ai', envKey: 'CEREBRAS_API_KEYS' },
-  '/groq':       { target: 'https://api.groq.com/openai', envKey: 'GROQ_API_KEYS' },
+  '/cerebras':   { target: 'https://gateway.ai.cloudflare.com/v1/00750af78aa126346f99afa4c68a4329/gpt-load/cerebras', envKey: 'CEREBRAS_API_KEYS' },
+  '/groq':       { target: 'https://gateway.ai.cloudflare.com/v1/00750af78aa126346f99afa4c68a4329/gpt-load/groq', envKey: 'GROQ_API_KEYS' },
   '/xai':        { target: 'https://api.x.ai', envKey: 'XAI_API_KEYS' },
   '/deepseek':   { target: 'https://api.deepseek.com', envKey: 'DEEPSEEK_API_KEYS' },
-  '/openrouter': { target: 'https://openrouter.ai/api', envKey: 'OPENROUTER_API_KEYS' },
+  '/openrouter': { target: 'https://gateway.ai.cloudflare.com/v1/00750af78aa126346f99afa4c68a4329/gpt-load/openrouter', envKey: 'OPENROUTER_API_KEYS' },
+  '/pollinations': { target: 'https://gen.pollinations.ai', envKey: 'POLLINATIONS_API_KEYS' },
   '/siliconflow':{ target: 'https://api.siliconflow.cn', envKey: 'SILICONFLOW_API_KEYS' },
   '/ollama':     { target: 'https://ollama.com', envKey: 'OLLAMA_API_KEYS' },
   '/openai':     { target: 'https://api.openai.com', envKey: 'OPENAI_API_KEYS' },
   '/claude':     { target: 'https://api.anthropic.com', envKey: 'CLAUDE_API_KEYS' },
   '/gemini':     { target: 'https://generativelanguage.googleapis.com', envKey: 'GEMINI_API_KEYS' },
+  '/nvidia':     { target: 'https://integrate.api.nvidia.com', envKey: 'NVIDIA_API_KEYS' },
 };
 
 const CORS_HEADERS = {
