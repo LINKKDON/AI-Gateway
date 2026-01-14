@@ -9,18 +9,20 @@
 
 // ================= 1. 全局配置 =================
 
-// 🛡️ 保号配置：RateLimit 150ms + Jitter，主打一个稳
+// 🛡️ 保号配置：RateLimit 200ms + Jitter，主打一个稳
 const SERVICES_CONFIG: Record<string, any> = {
-  '/cerebras':   { target: 'https://api.cerebras.ai', envKey: 'CEREBRAS_API_KEYS', rateLimit: 200 },
-  '/groq':       { target: 'https://api.groq.com/openai', envKey: 'GROQ_API_KEYS', rateLimit: 200 },
-  '/xai':        { target: 'https://api.x.ai', envKey: 'XAI_API_KEYS', rateLimit: 200 },
-  '/deepseek':   { target: 'https://api.deepseek.com', envKey: 'DEEPSEEK_API_KEYS', rateLimit: 200 },
-  '/openrouter': { target: 'https://openrouter.ai/api', envKey: 'OPENROUTER_API_KEYS', rateLimit: 200 },
-  '/ollama':     { target: 'https://ollama.com', envKey: 'OLLAMA_API_KEYS', rateLimit: 200 },
-  '/siliconflow':{ target: 'https://api.siliconflow.cn', envKey: 'SILICONFLOW_API_KEYS', rateLimit: 200 },
-  '/openai':     { target: 'https://api.openai.com', envKey: 'OPENAI_API_KEYS', rateLimit: 200 },
-  '/claude':     { target: 'https://api.anthropic.com', envKey: 'CLAUDE_API_KEYS', rateLimit: 500 },
-  '/gemini':     { target: 'https://generativelanguage.googleapis.com', envKey: 'GEMINI_API_KEYS', rateLimit: 200 },
+  '/cerebras': { target: 'https://gateway.ai.cloudflare.com/v1/00750af78aa126346f99afa4c68a4329/gpt-load/cerebras', envKey: 'CEREBRAS_API_KEYS', rateLimit: 200 },
+  '/groq': { target: 'https://gateway.ai.cloudflare.com/v1/00750af78aa126346f99afa4c68a4329/gpt-load/groq', envKey: 'GROQ_API_KEYS', rateLimit: 200 },
+  '/xai': { target: 'https://api.x.ai', envKey: 'XAI_API_KEYS', rateLimit: 200 },
+  '/deepseek': { target: 'https://api.deepseek.com', envKey: 'DEEPSEEK_API_KEYS', rateLimit: 200 },
+  '/openrouter': { target: 'https://gateway.ai.cloudflare.com/v1/00750af78aa126346f99afa4c68a4329/gpt-load/openrouter', envKey: 'OPENROUTER_API_KEYS', rateLimit: 200 },
+  '/pollinations': { target: 'https://gen.pollinations.ai', envKey: 'POLLINATIONS_API_KEYS', rateLimit: 200 },
+  '/ollama': { target: 'https://ollama.com', envKey: 'OLLAMA_API_KEYS', rateLimit: 200 },
+  '/siliconflow': { target: 'https://api.siliconflow.cn', envKey: 'SILICONFLOW_API_KEYS', rateLimit: 200 },
+  '/openai': { target: 'https://api.openai.com', envKey: 'OPENAI_API_KEYS', rateLimit: 200 },
+  '/claude': { target: 'https://api.anthropic.com', envKey: 'CLAUDE_API_KEYS', rateLimit: 500 },
+  '/gemini': { target: 'https://generativelanguage.googleapis.com', envKey: 'GEMINI_API_KEYS', rateLimit: 200 },
+  '/nvidia': { target: 'https://integrate.api.nvidia.com', envKey: 'NVIDIA_API_KEYS', rateLimit: 200 },
 };
 
 const MAX_RETRIES = 2;
@@ -60,7 +62,7 @@ interface QueueTask {
   url: string;
   method: string;
   headers: Headers;
-  body: ArrayBuffer | null; 
+  body: ArrayBuffer | null;
   resolve: (res: Response) => void;
   retryCount: number;
 }
@@ -125,7 +127,7 @@ class ServiceManager {
 
       const headers = new Headers(task.headers);
       if (!headers.has("Content-Type")) {
-         headers.set("Content-Type", "application/json");
+        headers.set("Content-Type", "application/json");
       }
       headers.set("User-Agent", BROWSER_UA);
 
@@ -248,10 +250,10 @@ async function handleRequest(req: Request): Promise<Response> {
   // 6. 配置检查
   manager.initKeys();
   if (manager.keys.length === 0) {
-     return new Response(JSON.stringify({ error: `Service Not Configured: No keys found for ${prefix}` }), { 
-       status: 501, 
-       headers: CORS_HEADERS 
-     });
+    return new Response(JSON.stringify({ error: `Service Not Configured: No keys found for ${prefix}` }), {
+      status: 501,
+      headers: CORS_HEADERS
+    });
   }
 
   // 7. 处理请求
@@ -260,7 +262,7 @@ async function handleRequest(req: Request): Promise<Response> {
       return new Response(JSON.stringify({ error: "Gateway Overloaded" }), { status: 429, headers: CORS_HEADERS });
     }
     try {
-      const bodyBuffer = await req.arrayBuffer(); 
+      const bodyBuffer = await req.arrayBuffer();
       return new Promise((resolve) => {
         manager.queue.push({
           url: targetUrl,
