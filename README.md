@@ -1,113 +1,127 @@
-# 🌐 Universal AI Gateway
+# Universal AI Gateway (Deno Edition) - v5.9.19
 
-**一个轻量级、高性能的 Serverless AI 网关，专为沉浸式翻译 (Immersive Translate)、LobeChat 等高并发场景优化。**
+这是一个专为 **Deno Deploy** 设计的高性能、企业级 AI 网关。它不仅仅是一个反向代理，更是一个集成了**智能流控**、**并发管理**、**故障重试**和**资源优化**的流量调度中心。
 
-本项目旨在解决 AI 服务（如 OpenAI, Anthropic, Cerebras, Groq 等）的区域限制、并发限流（Rate Limit）及 IP 风控问题，同时提供统一的接口管理和隐私保护。
-
----
-
-## ✨ 核心特性
-
-- **多平台支持**：提供 Cloudflare Workers (追求极速) 和 Deno Deploy (追求稳定) 双引擎版本。
-- **统一接口**：将不同厂商的 API 统一为 OpenAI 格式 (`/v1/chat/completions`)。
-- **隐私安全**：代码开源，支持自建，完全掌控数据隐私；内置 Nginx 伪装页面防止扫描。
-- **高可用设计**：
-  - **故障转移 (Failover)**：当某个 API Key 耗尽或报错时，自动无缝切换。
-  * **智能重试**：内置指数退避与随机抖动 (Jitter) 策略，防止二次雪崩。
-  * **负载均衡**：支持多 Key 轮询，最大化利用免费/付费额度。
+特别针对 **沉浸式翻译**、**LangChain**、**AutoGPT** 等高并发场景进行了深度优化，能够最大化利用免费/付费 API 的额度，同时极大地降低封号风险。
 
 ---
 
-## ⚖️ 版本选型指南 (Decision Guide)
+## 🌟 核心特性 (v5.9.19)
 
-根据你的使用场景和拥有的 Key 数量，选择合适的版本部署：
+### 1. 🚀 令牌桶流控 (Token Bucket)
+告别死板的固定延迟。采用令牌桶算法，允许**突发流量 (Burst)**。
+* **效果**：网页翻译时，前 8-10 段瞬间并发发出（秒开），后续请求平滑限速。既爽快又安全。
 
-| 特性 | **🚀 Cloudflare Workers 版** | **🦕 Deno Deploy 版** |
+### 2. 🛡️ 双重熔断机制
+* **RPS (Rate Per Second)**: 控制每秒请求数，防止触发上游速率限制。
+* **MaxConn (最大并发)**: 控制同时在途（In-flight）的请求数。防止因上游响应慢导致连接堆积，进而触发 429 或封号。
+
+### 3. 🔌 完美 SDK 兼容
+* 修复了传统网关拦截 `GET` 请求的问题。
+* 完美支持 **OpenAI Python/Node.js SDK**、**LangChain** 等库的初始化检查（如 `GET /v1/models`）。
+* 根路径 `/` 伪装成 Nginx 欢迎页面，隐蔽性满分。
+
+### 4. 🧠 智能协议优化
+* **Accept-Encoding: identity**: 主动请求上游返回明文 JSON，减少网关解压开销。
+* **Transparent Headers**: 智能透传响应头，保留上游的 `content-encoding`，彻底解决客户端解压失败导致的无限重试问题。
+* **Resource Auto-Release**: 在重试前显式释放连接资源，防止在高并发下 Deno 连接池耗尽。
+
+---
+
+## 🛠️ 部署指南
+
+此项目专为 **Deno Deploy** 打造。
+
+1.  **创建项目**: 登录 [Deno Deploy](https://dash.deno.com/)，创建一个新的 Playground 或从 GitHub 导入。
+2.  **复制代码**: 将 `main.ts` 的内容完整复制进去。
+3.  **设置环境变量**: 在 Deno Deploy 的 Settings -> Environment Variables 中添加以下变量：
+
+| 变量名 | 说明 | 示例值 |
 | :--- | :--- | :--- |
-| **架构代号** | **Failover Edition (故障转移版)** | **Queue Edition (队列版)** |
-| **核心机制** | **多 Key 轮转 + 极速重试** | **全局真队列 + 严格限流** |
-| **并发策略** | 0ms 延迟直连，遇到 429 错误立即切号重试 | 强制排队，按设定间隔 (Rate Limit) 逐个请求 |
-| **IP 优势** | **极优** (Cloudflare 全球 Anycast 原生 IP) | 一般 (固定数据中心 IP) |
-| **适用人群** | **多 Key 用户 (推荐)**<br>拥有多个 API Key，追求极致响应速度，不仅限 QPS。 | **单 Key / 保号用户**<br>Key 数量少或价格昂贵，必须严格控制请求频率。 |
-| **推荐场景** | 沉浸式翻译、网页浏览、高并发公共服务 | 严格限流的 API、后台批量任务 |
+| `ACCESS_PASSWORD` | **(必填)** 网关访问密码 | `sk-mysecretpassword` |
+| `CEREBRAS_API_KEYS` | Cerebras 密钥 (支持多行/逗号分隔) | `key1,key2,key3` |
+| `GROQ_API_KEYS` | Groq 密钥 | `gsk_1...,gsk_2...` |
+| `CLAUDE_API_KEYS` | Anthropic Claude 密钥 | `sk-ant...` |
+| `OPENAI_API_KEYS` | OpenAI 密钥 | `sk-...` |
+| `...` | 其他服务的 Key，参考代码中的 `envKey` | `...` |
+
+4.  **保存并部署**: 点击 **Save & Deploy**。
 
 ---
 
-## 🚀 部署指南 1：Cloudflare Workers 版
+## ⚙️ 服务配置与调优
 
-> **适用文件：** `worker.js` (v5.9.8)
+在代码顶部的 `SERVICES_CONFIG` 常量中，你可以针对不同服务商进行精细化调优。以下是推荐的**生产环境参数**：
 
-利用 Cloudflare 的全球边缘网络，提供低延迟的 API 转发。
+### 参数说明
+* **rps**: 每秒平均生成的令牌数（回血速度）。
+* **burst**: 令牌桶容量（允许瞬间并发的最大数量）。
+* **maxConn**: 最大同时处理的连接数（硬性并发红线）。
 
-1.  登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)，进入 **Workers & Pages**。
-2.  点击 **Create Application** -> **Create Worker**。
-3.  将 `worker.js` 的代码完整粘贴到编辑器中。
-4.  **配置环境变量 (Settings -> Variables)**：
-    * `ACCESS_PASSWORD`: **(必填)** 设置网关访问密码。
-    * `OPENAI_API_KEYS`: (可选) OpenAI Key，多个 Key 用英文逗号 `,` 分隔。
-    * `CEREBRAS_API_KEYS`: (可选) Cerebras Key 列表。
-    * *支持所有在代码 `servicesConfig` 中定义的服务商。*
-5.  点击 **Deploy**。
+### 推荐配置表
 
----
+| 服务商 | RPS | Burst | MaxConn | 适用场景 / 备注 |
+| :--- | :--- | :--- | :--- | :--- |
+| **Cerebras** | **4** | **8** | **6** | **沉浸式翻译神选**。4 Key 轮询配置，首屏秒开，防封号。 |
+| **Groq** | **1** | **3** | **2** | 单 Key 保号配置。Groq 70b 模型限速严，需保守。 |
+| **Claude** | **2** | **2** | **1** | **极度敏感**。Claude 对并发非常排斥，建议串行。 |
+| **DeepSeek** | **10** | **20** | **10** | 耐操型 API，可以放开跑。 |
+| **OpenAI** | **10** | **20** | **10** | 付费号通常限制宽松。 |
+| **Nvidia** | **3** | **6** | **5** | 免费额度较高，可适度并发。 |
 
-## 🦕 部署指南 2：Deno Deploy 版
+**修改示例：**
+```typescript
+'/cerebras': {
+    // 使用 Cloudflare Gateway 作为上游以利用缓存
+    target: '[https://gateway.ai.cloudflare.com/v1/YOUR_ID/gpt-load/cerebras](https://gateway.ai.cloudflare.com/v1/YOUR_ID/gpt-load/cerebras)',
+    envKey: 'CEREBRAS_API_KEYS',
+    rps: 4,      // 长期速度
+    burst: 8,    // 瞬间爆发力
+    maxConn: 6   // 安全刹车
+},
+💻 客户端使用方法
+网关部署成功后，你会获得一个 URL，例如 https://my-gateway.deno.dev。
 
-> **适用文件：** `main.ts` (v5.9.9)
+1. 沉浸式翻译 / 浏览器插件
+API 接口地址: https://my-gateway.deno.dev/cerebras/v1/chat/completions
 
-利用 Deno 的单实例内存共享特性，实现精确的全局队列控制。
+注意：加上服务前缀，如 /cerebras, /groq, /openai 等
 
-1.  登录 [Deno Deploy](https://dash.deno.com/)。
-2.  创建一个新的 **Playground** 或从 GitHub 导入。
-3.  将 `main.ts` 的代码粘贴进去。
-4.  **代码配置 (可选)**：
-    * 在代码中找到 `SERVICES_CONFIG` 对象。
-    * 根据你的 Key 数量调整 `rateLimit` (单位：毫秒)。
-    * *建议公式：* `1000 / Key数量 = rateLimit`。
-5.  **配置环境变量**：
-    * `ACCESS_PASSWORD`: **(必填)** 设置网关访问密码。
-    * `XXX_API_KEYS`: 配置对应的 API Key 列表。
-6.  点击 **Save & Deploy**。
+API Key: 填写你在环境变量 ACCESS_PASSWORD 中设置的密码。
 
----
+模型: 填写对应服务商支持的模型（如 llama3.1-70b）。
 
-## 🛠️ 客户端配置示例
+2. OpenAI Python SDK
+Python
 
-以 **沉浸式翻译 (Immersive Translate)** 插件为例：
+from openai import OpenAI
 
-1.  **翻译服务**：选择 **OpenAI** (因本项目兼容 OpenAI 接口格式)。
-2.  **API Key**：填写你在环境变量中设置的 `ACCESS_PASSWORD`。
-3.  **自定义 API 地址**：
-    * 格式：`https://你的网关域名/服务商标识/v1/chat/completions`
-    * 例如 (调用 Cerebras)：`https://ai-gateway.your-domain.com/cerebras/v1/chat/completions`
-    * 例如 (调用 DeepSeek)：`https://ai-gateway.your-domain.com/deepseek/v1/chat/completions`
-4.  **每秒最大请求数**：
-    * **CF 版**：建议设置为 `5` ~ `8`。
-    * **Deno 版**：建议设置为 `3` ~ `5`。
+client = OpenAI(
+    # 注意加服务前缀，并以 /v1 结尾
+    base_url="[https://my-gateway.deno.dev/cerebras/v1](https://my-gateway.deno.dev/cerebras/v1)", 
+    api_key="sk-mysecretpassword" # 填写你的网关密码
+)
 
-### 支持的服务商路由表
-| 路由前缀 | 目标服务商 | 环境变量名示例 |
-| :--- | :--- | :--- |
-| `/cerebras` | Cerebras | `CEREBRAS_API_KEYS` |
-| `/groq` | Groq | `GROQ_API_KEYS` |
-| `/deepseek` | DeepSeek | `DEEPSEEK_API_KEYS` |
-| `/openai` | OpenAI | `OPENAI_API_KEYS` |
-| `/claude` | Anthropic Claude | `CLAUDE_API_KEYS` |
-| `/gemini` | Google Gemini | `GEMINI_API_KEYS` |
-| `/siliconflow`| SiliconFlow | `SILICONFLOW_API_KEYS` |
+completion = client.chat.completions.create(
+    model="llama3.1-70b",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+print(completion.choices[0].message.content)
+3. LangChain
+Python
 
-*(更多服务商请查看代码中的 `servicesConfig` 配置)*
+from langchain_openai import ChatOpenAI
 
----
+llm = ChatOpenAI(
+    openai_api_base="[https://my-gateway.deno.dev/groq/v1](https://my-gateway.deno.dev/groq/v1)",
+    openai_api_key="sk-mysecretpassword",
+    model_name="llama3-70b-8192"
+)
+⚠️ 常见问题 (FAQ)
+Q: 为什么打开网关首页显示 "Welcome to nginx!"？ A: 这是为了伪装。为了防止被恶意扫描或探测，根路径 / 会故意返回 Nginx 的默认页面。API 功能都在 /v1/... 路径下正常工作。
 
-## ⚠️ 免责声明与安全警告
+Q: 为什么我有 10 个 Key，速度还是没起飞？ A: 检查 burst 和 maxConn 参数。如果 maxConn 设得太小（例如 1），即使你有 100 个 Key，网关也只会同一时间发 1 个请求。Cerebras 建议设为 6~8。
 
-1.  **数据隐私**：本项目仅作为 API 转发工具，不存储任何用户数据。但建议**务必自建网关**，不要使用不可信的第三方公开网关，以防中间人攻击导致隐私泄露。
-2.  **合法使用**：请遵守各 AI 服务商的使用条款（ToS）。本项目仅供技术研究与个人学习使用，请勿用于非法用途或大规模滥用免费资源。
-3.  **访问控制**：请务必设置高强度的 `ACCESS_PASSWORD`，防止网关被他人扫描和盗用。
+Q: 遇到 429 错误怎么办？ A: 网关内置了指数退避重试机制。如果依然 429，说明你的 Key 总量太少，或者 rps 设得太高。请降低 rps 或增加 Key 的数量。
 
----
-
-## License
-
-[MIT](LICENSE)
+Q: Worker 版本和 Deno 版本通用吗？ A: 不通用。本代码专为 Deno Runtime 设计（利用了 Deno 的内存驻留特性实现令牌桶）。Cloudflare Workers 请使用专门的 Failover 版本。
